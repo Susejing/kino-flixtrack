@@ -2,12 +2,12 @@
   "id": "flixtrack",
   "name": "FlixTrack — Trakt y SIMKL",
   "author": "Susejing",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "apiVersion": 14,
   "entry": "plugin.js",
   "icon": "icon.png",
   "color": "#F59E0B",
-  "description": "Registra en tu historial de Trakt y SIMKL lo que terminas de ver en Kino, venga de la fuente que sea. Conectas tocando una vez desde su pantalla y la ventanita se abre con el código ya escrito. Si una fuente no trae ids, busca por título y aprende el par.",
+  "description": "Registra en tu historial de Trakt y SIMKL lo que terminas de ver en Kino, venga de la fuente que sea. Conectas desde su pantalla: Trakt en la ventanita y SIMKL en tu navegador. Si una fuente no trae ids, busca por título y aprende el par.",
   "hosts": [
     "api.trakt.tv",
     "auth.trakt.tv",
@@ -39,7 +39,7 @@
       "key": "cuentas",
       "label": "Tus cuentas",
       "type": "section",
-      "hint": "La manera más fácil está en la pantalla del plugin: Inicio ▸ FlixTrack ▸ «Conectar» — la ventanita se abre con el código ya escrito. Esto de abajo es el método manual de respaldo."
+      "hint": "La manera más fácil está en la pantalla del plugin: Inicio ▸ FlixTrack ▸ «Conectar» (Trakt en la ventanita, SIMKL en tu navegador). Esto de abajo es el método manual de respaldo."
     },
     {
       "key": "estado",

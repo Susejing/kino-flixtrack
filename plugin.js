@@ -14,6 +14,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+// FlixTrack 0.2.3 — EL CÓDIGO YA NO SE PIERDE. El almacén de Kino guarda
+// y devuelve TEXTO, y el código pendiente se guardaba como objeto: se
+// perdía en silencio y al volver de la ventanita ya no quedaba nada que
+// canjear («No quedó código pendiente», con el dispositivo ya aprobado
+// en Trakt). Ahora todo lo estructurado viaja como JSON —el pendiente,
+// el mapa, lo visto—, el pendiente lleva su vencimiento DENTRO, y el
+// canje tras la ventanita usa el código QUE ESTÁ EN LA MANO (no el
+// almacén). Además: SIMKL autoriza en el navegador de verdad (su página
+// no carga en la ventanita: queda en blanco), con «Abrir en tu
+// navegador» y «Ya autoricé — comprobar»; y un rechazo de canje se lee
+// por su cuerpo: un invalid_client ya no se confunde con «aún pendiente».
+
 // FlixTrack 0.2.2 — LOS CLIENT ID DEL AUTOR VAN DE FÁBRICA: nadie que
 // instale esto tiene que registrar una app. El OAuth de Trakt usa el
 // host nuevo auth.trakt.tv (lo exige su API en la era PKCE) y va sin
@@ -44,7 +56,7 @@
 //    número; una película se busca a sí misma. Si la búsqueda no calza,
 //    no se inventa nada: el evento se omite (como siempre).
 
-const VERSION = "0.2.2";
+const VERSION = "0.2.3";
 const UA = "FlixTrack/" + VERSION;
 
 // Client ids del AUTOR, para que nadie más tenga que registrar una app.
@@ -54,6 +66,23 @@ const CLIENT_ID_TRAKT_DEFECTO = "_ZSfudWvGJa-tjp3PGVRurzoP7XFTUNGIksyfpDhW7I";
 const CLIENT_ID_SIMKL_DEFECTO = "f40b1a5ca4ad817dd02b962dd5ec89a5984f967fc8438fdb799c3b321e0de1f3";
 
 // ---------- helpers ----------
+
+// El almacén de Kino guarda y devuelve TEXTO (así lo dice su contrato:
+// set(clave, texto)). Un objeto directo se pierde o vuelve convertido en
+// texto inservible — así se perdía el código pendiente en la 0.2.2. Todo
+// lo estructurado viaja como JSON y, al leer, la basura se ignora.
+function guardarJson(clave, valor) {
+  try { kino.storage.set(clave, JSON.stringify(valor)); } catch (e) { /* almacén lleno */ }
+}
+
+function leerJson(clave) {
+  try {
+    const v = kino.storage.get(clave);
+    if (!v) return null;
+    if (typeof v === "object") return v;   // por si un Kino devolviera el objeto tal cual
+    return JSON.parse(v);
+  } catch (e) { return null; }
+}
 
 // Igual que en AniTrack: cuando el servidor rechaza, su respuesta viaja
 // en el mensaje de error (el cuerpo dice la verdad).
@@ -75,12 +104,12 @@ async function fetchJson(url, options) {
 // Evita entregar dos veces el mismo evento (Kino reintenta; el id es la clave).
 function yaEntregado(id) {
   try {
-    let seen = kino.storage.get("seen");
+    let seen = leerJson("seen");
     if (!Array.isArray(seen)) seen = [];
     if (seen.indexOf(id) >= 0) return true;
     seen.push(id);
     while (seen.length > 50) seen.shift();
-    kino.storage.set("seen", seen, 2500000000);
+    guardarJson("seen", seen);
   } catch (e) {
     kino.log("storage falló:", String(e));
     return false;
@@ -228,13 +257,15 @@ async function tokenSimkl() {
 // la fuente no los traiga) y de las búsquedas verificadas por título.
 function mapaLeer() {
   try {
-    const m = kino.storage.get("mapaAprendido");
+    const m = leerJson("mapaAprendido");
     return (m && typeof m === "object") ? m : {};
   } catch (e) { return {}; }
 }
 
 function mapaGuardar(m) {
-  try { kino.storage.set("mapaAprendido", m, 15552000000); } catch (e) { /* almacén lleno */ }
+  // Sin TTL del almacén: cada par ya lleva su fecha y mapaConsultar
+  // decide por la edad (el tope de ttlMs son 30 días, menos que el mapa).
+  guardarJson("mapaAprendido", m);
 }
 
 function mapaAprender(tipo, titulo, anio, ids) {
@@ -436,6 +467,25 @@ async function enSimkl(payload) {
 
 // ---------- El flujo de dispositivo (RFC 8628), por servicio ----------
 
+// ¿El rechazo del canje solo significa «todavía no ha autorizado»? Se
+// mira el estado Y el cuerpo de la respuesta: un invalid_client o un
+// invalid_grant es un error de verdad y no puede quedarse girando como
+// si fuera «sigue esperando». El cuerpo viaja en e.message (fetchJson).
+function rechazoPendiente(e, estados) {
+  if (!e) return false;
+  const cuerpo = String((e && e.message) || "");
+  if (cuerpo.indexOf("authorization_pending") >= 0 || cuerpo.indexOf("slow_down") >= 0) return true;
+  if (estados.indexOf(e.status) < 0) return false;
+  return cuerpo.indexOf("invalid") < 0;
+}
+
+// ¿El código ya venció? 404, 410 o un cuerpo que lo diga.
+function rechazoExpirado(e) {
+  if (!e) return false;
+  const cuerpo = String((e && e.message) || "");
+  return e.status === 404 || e.status === 410 || cuerpo.indexOf("expired") >= 0;
+}
+
 // Cada servicio declara sus formas: cómo pide el código, cómo lo canjea,
 // cuándo un rechazo significa «aún pendiente» y cómo se llama la cuenta.
 const SERV = {
@@ -458,8 +508,8 @@ const SERV = {
         method: "POST", headers: headersTrakt(), body: { json: { code: code, client_id: cli } }
       });
     },
-    pendiente: function (e) { return e && (e.status === 400 || e.status === 418 || e.status === 429); },
-    expirado: function (e) { return e && (e.status === 404 || e.status === 410); },
+    pendiente: function (e) { return rechazoPendiente(e, [400, 418, 429]); },
+    expirado: rechazoExpirado,
     guardarTokens: function (r) {
       try {
         if (r.refresh_token) kino.storage.set("traktRefreshToken", r.refresh_token, 2500000000);
@@ -497,10 +547,8 @@ const SERV = {
         } }
       });
     },
-    pendiente: function (e) { return e && (e.status === 400 || e.status === 428); },
-    expirado: function (e) {
-      return e && (e.status === 404 || e.status === 410 || String(e.message || "").indexOf("expired") >= 0);
-    },
+    pendiente: function (e) { return rechazoPendiente(e, [400, 428]); },
+    expirado: rechazoExpirado,
     guardarTokens: function (r) {
       try {
         if (r.refresh_token) kino.storage.set("simklRefreshToken", r.refresh_token, 2500000000);
@@ -567,15 +615,22 @@ async function flujoDispositivo(serv) {
     const d = await s.pedirCodigo(cli);
     if (!d || !d.device_code) return { estado: "fallo", mensaje: s.nombre + " no entregó código: revisa el Client ID." };
     const url = s.urlActivacion(d);
-    try { kino.storage.set(serv + "Device", { code: d.device_code, userCode: d.user_code, url: url }, (d.expires_in || 600) * 1000); } catch (e2) { }
-    return { estado: "codigo", userCode: d.user_code, url: url, mensaje: "" };
+    guardarJson(serv + "Device", { code: d.device_code, userCode: d.user_code, url: url,
+      vence: Date.now() + (d.expires_in || 600) * 1000 });
+    return { estado: "codigo", code: d.device_code, userCode: d.user_code, url: url, mensaje: "" };
   } catch (e) {
-    return { estado: "fallo", mensaje: s.nombre + " rechazó la solicitud: " + String((e && (e.status || e.message)) || e).slice(0, 120) };
+    return { estado: "fallo", mensaje: s.nombre + " rechazó la solicitud: " + String((e && (e.message || e.status)) || e).slice(0, 160) };
   }
 }
 
+// El pendiente vive en el almacén COMO TEXTO (JSON) y lleva su propio
+// vencimiento dentro: no depende del TTL del almacén, que cambia de
+// forma entre versiones de Kino.
 function pendienteDe(serv) {
-  try { return kino.storage.get(serv + "Device") || null; } catch (e) { return null; }
+  const p = leerJson(serv + "Device");
+  if (!p || !p.code) return null;
+  if (p.vence && Date.now() > p.vence) return null;
+  return p;
 }
 
 // Canje aceptado: guardar tokens, limpiar el pendiente, preguntar nombre.
@@ -591,10 +646,13 @@ async function trasConectar(serv, s, r) {
 }
 
 // Encuesta al endpoint de canje: hasta N intentos separados por el
-// intervalo del RFC (5 s). Devuelve ok o pendiente; nunca inventa.
-async function encuestaDispositivo(serv, intentos) {
+// intervalo del RFC (5 s). El código puede venir EN LA MANO —el que pidió
+// esta misma llamada cuando abrió la ventanita— o del almacén —el de la
+// tarjeta—; el de la mano gana: la aprobación de la ventanita ya no
+// depende del almacén. Devuelve ok o pendiente; nunca inventa.
+async function encuestaDispositivo(serv, intentos, enMano) {
   const s = SERV[serv];
-  const pend = pendienteDe(serv);
+  const pend = (enMano && enMano.code) ? enMano : pendienteDe(serv);
   if (!pend || !pend.code) return { estado: "fallo", mensaje: "No quedó código pendiente: toca de nuevo." };
   for (let i = 0; i < intentos; i++) {
     try {
@@ -608,7 +666,7 @@ async function encuestaDispositivo(serv, intentos) {
       }
       try { kino.storage.remove(serv + "Device"); } catch (e2) { }
       if (s.expirado(e)) return { estado: "fallo", mensaje: "El código de " + s.nombre + " venció: toca de nuevo para pedir otro." };
-      return { estado: "fallo", mensaje: s.nombre + " rechazó el canje (" + String((e && (e.status || e.message)) || "sin detalle").slice(0, 80) + "): quedó sin sesión." };
+      return { estado: "fallo", mensaje: s.nombre + " rechazó el canje (" + String((e && (e.message || e.status)) || "sin detalle").slice(0, 120) + "): quedó sin sesión." };
     }
   }
   return { estado: "pendiente", userCode: pend.userCode, url: pend.url,
@@ -621,6 +679,15 @@ async function conectarConVentana(serv) {
   const s = SERV[serv];
   const r = await flujoDispositivo(serv);
   if (r.estado !== "codigo") return r;   // ok, pendiente, fallo o falta-id ya traen mensaje
+
+  // SIMKL autoriza en el navegador de verdad: su página (simkl.com/pin)
+  // no carga dentro de la ventanita de Kino —queda en blanco—. El código
+  // sale en la tarjeta, con un botón que abre el enlace en el navegador
+  // (Kino muestra su hojita de confirmación) y «Ya autoricé» que canjea.
+  if (serv === "simkl") {
+    return { estado: "sin-ventana", userCode: r.userCode, url: r.url,
+      mensaje: "Toca «Abrir en tu navegador», autoriza el código " + (r.userCode || "?") + " en SIMKL y vuelve a tocar «Ya autoricé»." };
+  }
 
   if (!kino.visualBrowser || !kino.visualBrowser.available) {
     return { estado: "sin-ventana", userCode: r.userCode, url: r.url,
@@ -640,7 +707,9 @@ async function conectarConVentana(serv) {
   }
   // La persona tocó Listo (o la ventana esperó y se cerró): a canjear.
   const intentos = (w && w.status === "closed") ? 1 : 2;
-  const res = await encuestaDispositivo(serv, intentos);
+  // El canje usa el código QUE ESTÁ EN LA MANO: viajó en r.code desde el
+  // pedirCodigo de esta misma llamada y ya no depende del almacén.
+  const res = await encuestaDispositivo(serv, intentos, { code: r.code, userCode: r.userCode, url: r.url });
   if (res.estado === "pendiente" && w && w.status === "timeout") {
     res.mensaje = "La ventanita esperó 10 minutos y se cerró: si ya autorizaste, toca de nuevo para comprobar.";
   }
@@ -665,7 +734,7 @@ async function abrirVentanaServ(serv) {
       mensaje: "La ventanita no se pudo abrir (" + String((e && e.code) || "fallo") + "): abre " + pend.url + " en cualquier navegador y vuelve a tocar para comprobar." };
   }
   const intentos = (w && w.status === "closed") ? 1 : 2;
-  return encuestaDispositivo(serv, intentos);
+  return encuestaDispositivo(serv, intentos, pend);
 }
 
 function borrarSesion(serv) {
@@ -783,33 +852,40 @@ export async function screen(arg) {
   };
 
   const tarjetaPend = function (titulo, pend, checkEvent, ventanaEvent) {
-    return { type: "Card", key: "pend" + titulo, padding: 16, gap: 8, children: [
+    const hijos = [
       { type: "Text", text: "Código de " + titulo, textEn: titulo + " code", style: "caption", color: "muted" },
       { type: "Text", text: String((pend && pend.userCode) || "?"), textEn: String((pend && pend.userCode) || "?"), style: "h1", bold: true },
       { type: "Text",
-        text: "Si la ventanita no salió, ábrelo en cualquier navegador y autoriza:",
-        textEn: "If the window did not open, visit this in any browser and allow:",
+        text: "Autoriza este código en la página que abre el botón azul (o escanea el QR):",
+        textEn: "Allow this code on the page the blue button opens (or scan the QR):",
         style: "caption", color: "muted" },
-      { type: "Text", text: String((pend && pend.url) || ""), textEn: String((pend && pend.url) || ""), style: "caption" },
-      { type: "QrImage", value: String((pend && pend.url) || "https://trakt.tv"), size: "medium" },
-      { type: "ElevatedButton", icon: "check", fill: true,
+      { type: "ElevatedButton", icon: "language", fill: true,
+        labelText: "Abrir en tu navegador", labelTextEn: "Open in your browser",
+        onPressed: { go: { url: { href: String((pend && pend.url) || "https://trakt.tv/activate"),
+          title: "Autorizar FlixTrack en " + titulo } } } },
+      { type: "ElevatedButton", icon: "check",
         labelText: "Ya autoricé — comprobar", labelTextEn: "I allowed it — check",
-        onPressed: checkEvent },
-      { type: "TextButton", icon: "refresh",
+        onPressed: checkEvent }
+    ];
+    if (ventanaEvent) {
+      hijos.push({ type: "TextButton", icon: "refresh",
         labelText: "Abrir la ventanita de nuevo", labelTextEn: "Open the window again",
-        onPressed: ventanaEvent },
-      { type: "Text",
-        text: "El código vale unos minutos; si vence, «Conectar» pide otro.",
-        textEn: "The code lasts a few minutes; if it expires, Connect asks for another.",
-        style: "caption", color: "muted" }
-    ] };
+        onPressed: ventanaEvent });
+    }
+    hijos.push({ type: "Text", text: String((pend && pend.url) || ""), textEn: String((pend && pend.url) || ""), style: "caption" });
+    hijos.push({ type: "QrImage", value: String((pend && pend.url) || "https://trakt.tv"), size: "medium" });
+    hijos.push({ type: "Text",
+      text: "El código vale unos minutos; si vence, «Conectar» pide otro.",
+      textEn: "The code lasts a few minutes; if it expires, Connect asks for another.",
+      style: "caption", color: "muted" });
+    return { type: "Card", key: "pend" + titulo, padding: 16, gap: 8, children: hijos };
   };
 
   const children = [
     { type: "Text", text: "Tus cuentas", textEn: "Your accounts", style: "h3" },
     { type: "Text",
-      text: "Conectas tocando una vez: la ventanita se abre con el código ya escrito, autorizas, tocas Listo y listo. Nada de copiar ni pegar.",
-      textEn: "Connect with one tap: the window opens with the code typed in, you allow it, tap Done and done. No copying, no pasting.",
+      text: "Trakt conecta en la ventanita con el código ya escrito; SIMKL abre su página en tu navegador. Autorizas y tocas «Ya autoricé — comprobar».",
+      textEn: "Trakt connects in the window with the code typed in; SIMKL opens its page in your browser. Allow it, then tap «I allowed it — check».",
       style: "p", color: "muted" },
     tarjeta("Trakt", traktSesion, traktNombre, "conectarTrakt", "traktLogout")
   ];
@@ -818,7 +894,7 @@ export async function screen(arg) {
   }
   children.push(tarjeta("SIMKL", simklSesion, simklNombre, "conectarSimkl", "simklLogout"));
   if (simklPend && simklPend.userCode && !simklSesion) {
-    children.push(tarjetaPend("SIMKL", simklPend, "conectarSimkl", "ventanaSimkl"));
+    children.push(tarjetaPend("SIMKL", simklPend, "conectarSimkl", null));
   }
   children.push({ type: "Divider" });
   children.push({ type: "Text",
