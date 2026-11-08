@@ -2,19 +2,31 @@
   "id": "flixtrack",
   "name": "FlixTrack — Trakt y SIMKL",
   "author": "Susejing",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "apiVersion": 14,
   "entry": "plugin.js",
   "icon": "icon.png",
   "color": "#F59E0B",
   "description": "Registra en tu historial de Trakt y SIMKL lo que terminas de ver en Kino, venga de la fuente que sea. Conectas tocando una vez desde su pantalla y la ventanita se abre con el código ya escrito. Si una fuente no trae ids, busca por título y aprende el par.",
-  "hosts": ["api.trakt.tv", "trakt.tv", "api.simkl.com", "simkl.com"],
-  "capabilities": ["tracking", "screen"],
+  "hosts": [
+    "api.trakt.tv",
+    "auth.trakt.tv",
+    "trakt.tv",
+    "api.simkl.com",
+    "simkl.com"
+  ],
+  "capabilities": [
+    "tracking",
+    "screen"
+  ],
   "screen": {
     "label": "FlixTrack",
     "labelEn": "FlixTrack",
     "menuOpens": "screen",
-    "opensFrom": ["menu", "settings"]
+    "opensFrom": [
+      "menu",
+      "settings"
+    ]
   },
   "enhancements": {
     "20": {
@@ -23,11 +35,38 @@
   },
   "debug": true,
   "settings": [
-    { "key": "cuentas", "label": "Tus cuentas", "type": "section", "hint": "La manera más fácil está en la pantalla del plugin: Inicio ▸ FlixTrack ▸ «Conectar» — la ventanita se abre con el código ya escrito. Esto de abajo es el método manual de respaldo." },
-    { "key": "estado", "label": "Conexión", "type": "status" },
-    { "key": "traktClientId", "label": "Client ID de Trakt", "type": "text", "hint": "De tu app en trakt.tv/oauth/applications (redirect urn:ietf:wg:oauth:2.0:oob)" },
-    { "key": "conectarTrakt", "label": "Conectar Trakt", "type": "action" },
-    { "key": "simklClientId", "label": "Client ID de SIMKL", "type": "text", "hint": "De tu app V2 en simkl.com/settings/developer (tipo TV)" },
-    { "key": "conectarSimkl", "label": "Conectar SIMKL", "type": "action" }
+    {
+      "key": "cuentas",
+      "label": "Tus cuentas",
+      "type": "section",
+      "hint": "La manera más fácil está en la pantalla del plugin: Inicio ▸ FlixTrack ▸ «Conectar» — la ventanita se abre con el código ya escrito. Esto de abajo es el método manual de respaldo."
+    },
+    {
+      "key": "estado",
+      "label": "Conexión",
+      "type": "status"
+    },
+    {
+      "key": "traktClientId",
+      "label": "Client ID de Trakt",
+      "type": "text",
+      "hint": "Opcional: el del autor ya viene de fábrica (trakt.tv/oauth/applications)"
+    },
+    {
+      "key": "conectarTrakt",
+      "label": "Conectar Trakt",
+      "type": "action"
+    },
+    {
+      "key": "simklClientId",
+      "label": "Client ID de SIMKL",
+      "type": "text",
+      "hint": "Opcional: el del autor ya viene de fábrica (simkl.com/settings/developer)"
+    },
+    {
+      "key": "conectarSimkl",
+      "label": "Conectar SIMKL",
+      "type": "action"
+    }
   ]
 }

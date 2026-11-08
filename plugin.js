@@ -14,6 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+// FlixTrack 0.2.2 — LOS CLIENT ID DEL AUTOR VAN DE FÁBRICA: nadie que
+// instale esto tiene que registrar una app. El OAuth de Trakt usa el
+// host nuevo auth.trakt.tv (lo exige su API en la era PKCE) y va sin
+// client_secret, que Trakt ya no emite. Sin más cambios de lógica.
+//
 // FlixTrack 0.2.0 — SIN PEGAR NADA Y LA IDENTIFICACIÓN DE VERDAD.
 // La modernización al nivel de AniTrack:
 //
@@ -39,15 +44,14 @@
 //    número; una película se busca a sí misma. Si la búsqueda no calza,
 //    no se inventa nada: el evento se omite (como siempre).
 
-const VERSION = "0.2.0";
+const VERSION = "0.2.2";
 const UA = "FlixTrack/" + VERSION;
 
 // Client ids del AUTOR, para que nadie más tenga que registrar una app.
-// Hoy están vacíos: cada quien pega la suya en Ajustes ▸ FlixTrack (y la
-// pantalla funciona igual). El día que el autor registre sus apps, se
-// incrustan aquí y el ajuste queda como simple respaldo.
-const CLIENT_ID_TRAKT_DEFECTO = "";
-const CLIENT_ID_SIMKL_DEFECTO = "";
+// Van de fábrica desde la 0.2.2: si alguien pega el suyo en Ajustes ▸
+// FlixTrack, el suyo manda (el ajuste gana al defecto).
+const CLIENT_ID_TRAKT_DEFECTO = "_ZSfudWvGJa-tjp3PGVRurzoP7XFTUNGIksyfpDhW7I";
+const CLIENT_ID_SIMKL_DEFECTO = "f40b1a5ca4ad817dd02b962dd5ec89a5984f967fc8438fdb799c3b321e0de1f3";
 
 // ---------- helpers ----------
 
@@ -157,7 +161,7 @@ async function tokenTrakt() {
     e.status = "sin-conectar";
     throw e;
   }
-  const r = await fetchJson("https://api.trakt.tv/oauth/token", {
+  const r = await fetchJson("https://auth.trakt.tv/oauth/token", {
     method: "POST",
     headers: headersTrakt(),
     body: { json: {
@@ -313,13 +317,17 @@ async function identificar(tipo, titulo, anio) {
     }
   }
 
-  // 3) Respaldo: búsqueda en SIMKL (también sin sesión, por URL).
+  // 3) Respaldo: búsqueda en SIMKL. Las apps V2 nuevas piden token de
+  // usuario en cada llamada: con sesión va con Bearer; sin sesión se
+  // intenta igual y si la app no lo permite, simplemente no hay lista.
   if (clientIdSimkl()) {
     try {
+      const cabSimkl = { "User-Agent": UA };
+      try { cabSimkl.Authorization = "Bearer " + await tokenSimkl(); } catch (e3) { /* sin sesión */ }
       lista = await fetchJson(
         "https://api.simkl.com/search?q=" + encodeURIComponent(String(titulo).slice(0, 200)) +
           "&type=" + (tipo === "movie" ? "movie" : "tv") + "&" + paramsSimkl(),
-        { headers: { "User-Agent": UA } });
+        { headers: cabSimkl });
     } catch (e) { lista = null; }
     if (lista && lista.length) {
       const tipoSimkl = tipo === "movie" ? "movie" : "tv";
@@ -435,18 +443,18 @@ const SERV = {
     nombre: "Trakt",
     tieneSesion: function () { return !!kino.storage.get("traktRefreshToken"); },
     pedirCodigo: function (cli) {
-      return fetchJson("https://api.trakt.tv/oauth/device/code", {
+      return fetchJson("https://auth.trakt.tv/oauth/device/code", {
         method: "POST", headers: headersTrakt(), body: { json: { client_id: cli } }
       });
     },
     // La página de activación de Trakt acepta el código en la ruta:
-    // https://trakt.tv/activate/5055CC52 lo deja ya escrito.
+    // auth.trakt.tv/activate/5055CC52 lo deja ya escrito.
     urlActivacion: function (d) {
-      const base = String((d && d.verification_url) || "https://trakt.tv/activate").replace(/\/+$/, "");
+      const base = String((d && d.verification_url) || "https://auth.trakt.tv/activate").replace(/\/+$/, "");
       return (d && d.user_code) ? base + "/" + d.user_code : base;
     },
     canjear: function (cli, code) {
-      return fetchJson("https://api.trakt.tv/oauth/device/token", {
+      return fetchJson("https://auth.trakt.tv/oauth/device/token", {
         method: "POST", headers: headersTrakt(), body: { json: { code: code, client_id: cli } }
       });
     },
