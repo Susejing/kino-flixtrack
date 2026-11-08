@@ -1,21 +1,33 @@
 {
   "id": "flixtrack",
   "name": "FlixTrack — Trakt y SIMKL",
-  "version": "0.1.1",
-  "apiVersion": 7,
+  "author": "Susejing",
+  "version": "0.2.0",
+  "apiVersion": 14,
   "entry": "plugin.js",
   "icon": "icon.png",
   "color": "#F59E0B",
-  "description": "Registra las películas y episodios que terminas de ver en Kino directamente en tu historial de Trakt y SIMKL, sin importar la fuente. Conexión con un código corto desde el teléfono: nada de tokens kilométricos.",
-  "hosts": ["api.trakt.tv", "api.simkl.com"],
-  "capabilities": ["tracking"],
+  "description": "Registra en tu historial de Trakt y SIMKL las películas y episodios que terminas de ver en Kino, vengan de la fuente que vengan. Conectas tocando una vez desde su propia pantalla y la ventanita se cierra sola. Si una fuente no trae identificadores, busca la película o serie por su título y aprende el par para la próxima.",
+  "hosts": ["api.trakt.tv", "trakt.tv", "api.simkl.com", "simkl.com"],
+  "capabilities": ["tracking", "screen"],
+  "screen": {
+    "label": "FlixTrack",
+    "labelEn": "FlixTrack",
+    "menuOpens": "screen",
+    "opensFrom": ["menu", "settings"]
+  },
+  "enhancements": {
+    "20": {
+      "visualBrowser": true
+    }
+  },
   "debug": true,
   "settings": [
-    { "key": "cuentas", "label": "Tus cuentas", "type": "section", "hint": "Pega cada Client ID y toca su botón Conectar: saldrá un código corto." },
+    { "key": "cuentas", "label": "Tus cuentas", "type": "section", "hint": "La manera más fácil está en la pantalla del plugin: Inicio ▸ FlixTrack ▸ «Conectar» — la ventanita se abre con el código ya escrito. Esto de abajo es el método manual de respaldo." },
     { "key": "estado", "label": "Conexión", "type": "status" },
-    { "key": "traktClientId", "label": "Client ID de Trakt", "type": "text", "hint": "De trakt.tv/oauth/applications (redirect: urn:ietf:wg:oauth:2.0:oob)" },
+    { "key": "traktClientId", "label": "Client ID de Trakt", "type": "text", "hint": "De tu app en trakt.tv/oauth/applications (redirect: urn:ietf:wg:oauth:2.0:oob). Necesario para conectar; sin él Trakt no funciona." },
     { "key": "conectarTrakt", "label": "Conectar Trakt", "type": "action" },
-    { "key": "simklClientId", "label": "Client ID de SIMKL", "type": "text", "hint": "De tu app V2 en simkl.com/settings/developer (tipo TV/dispositivos)" },
+    { "key": "simklClientId", "label": "Client ID de SIMKL", "type": "text", "hint": "De tu app V2 en simkl.com/settings/developer (tipo TV/dispositivos). Necesario para conectar; sin él SIMKL no funciona." },
     { "key": "conectarSimkl", "label": "Conectar SIMKL", "type": "action" }
   ]
 }
